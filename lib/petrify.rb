@@ -151,11 +151,14 @@ class Petrify
     end
     log("recover event=open")
     file = File.open(path, "w")
-    if !at_timestamp
-      log("recover event=find")
-      at_timestamp = get_list.sort.last
-    end
-    meta = get_meta(at_timestamp)
+    tail_timestamp =
+      if !at_timestamp
+        log("recover event=find")
+        get_list.sort.last
+      else
+        at_timestamp
+      end
+    meta = get_meta(tail_timestamp)
     history = meta["history"]
     log("recover event=build history_size=#{history.size}")
     history.each { |timestamp| get_data(file, timestamp) }
