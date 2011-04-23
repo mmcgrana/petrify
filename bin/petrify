@@ -1,0 +1,39 @@
+#!/usr/bin/env ruby
+
+require "optparse"
+
+$:.unshift(File.join(File.dirname(__FILE__), "..", "lib"))
+require "petrify"
+
+action = nil
+opts = {}
+ARGV.options do |o|
+  o.set_summary_indent("  ")
+  o.banner = "Usage: AWS_ACCESS_KEY_ID=<id> AWS_SECRET_ACCESS_KEY=<key> #{$0} <persist|list|recover> [--file <path>] [--bucket <bucket>] [--prefix <path>] [--delta-interval <secs>] [--snapshot-interval <secs>] [--timestamp <time>] [--quiet]\n"
+  o.on("-f", "--file=path", String, "Path to append-only file") { |f| opts[:path] = f }
+  o.on("-b", "--bucket=name", String, "Bucket in which to persist") { |b| opts[:bucket] = b }
+  o.on("-p", "--prefix=path", String, "Prefix under which to persist") { |p| opts[:prefix] = p }
+  o.on("-d", "--delta-interval=secs", Integer, "Seconds between deltas") { |d| opts[:delta_interval] = d }
+  o.on("-s", "--snapshot-interval=secs", Integer, "Seconds between snapshots") { |s| opts[:snapshot_interval] = s }
+  o.on("-a", "--at-timestamp=time", Integer, "Recover to timestamp") { |t| opts[:at_timestamp] = t }
+  o.on("-q", "--quiet", "Suppress logs") { opts[:quiet] = true }
+  o.on("-h", "--help", "Show this help message") { abort(o.to_s) }
+  o.separator("")
+  o.parse!
+  action = ARGV.shift
+  opts[:aws_access_key_id] = ENV["AWS_ACCESS_KEY_ID"]
+  opts[:aws_secret_access_key] = ENV["AWS_SECRET_ACCESS_KEY"]
+
+  abort(o.to_s) if !(ARGV.empty? && opts[:aws_access_key_id] && opts[:aws_secret_access_key])
+  if (action == "persist")
+    abort(o.to_s) if !(opts[:path] && opts[:delta_interval] && opts[:bucket] && opts[:prefix])
+  elsif (action == "list")
+    abort(o.to_s) if !(opts[:bucket] && opts[:prefix])
+  elsif (action == "recover")
+    abort(o.to_s) if !(opts[:path] && opts[:bucket] && opts[:prefix])
+  else
+    abort(o.to_s)
+  end
+end
+
+Petrify.new(opts).send(action)
