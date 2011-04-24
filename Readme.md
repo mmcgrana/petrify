@@ -21,7 +21,7 @@ Start Petrify against the file:
     
     $ export AWS_ACCESS_KEY_ID=...
     $ export AWS_SECRET_ACCESS_KEY=...
-    $ petrify persist --file appendonly.aof --bucket petrify --prefix example --delta-interval 4
+    $ bin/petrify-persist --bucket petrify --prefix example --file appendonly.aof --interval 4
 
 Add some data to the Redis server over the course of a minute or so:
 
@@ -38,7 +38,7 @@ Shutdown the Petrify process, shutdown the Redis process, and remove the local a
 
 Recover the append-only file to the last stored delta:
 
-    $ petrify recover --bucket petrify --prefix example --file appendonly.aof
+    $ bin/petrify-recover --bucket petrify --prefix example --file appendonly.aof
 
 Restart the Redis server against the recovered state:
 
@@ -55,33 +55,17 @@ Instead of recovering to the time of the last stored delta, we can recover to a 
 
 List available recovery timestamps:
 
-    $ petrify list --bucket petrify --prefix example
+    $ bin/petrify-list --bucket petrify --prefix example
 
 Choose an intermediate time at which only a subset of the keys had been added:
 
-    $ petrify recover --bucket petrify --prefix example --file appendonly.aof --at-timestamp <time>
+    $ bin/petrify-recover --bucket petrify --prefix example --file appendonly.aof --at-timestamp <time>
     $ redis-server redis.conf
     $ redis-cli keys '*'
 
 
-A `petrify-simple` program is provided in addition to the more general `petrify`. The simple version only posts snapshots of a file and does not use deltas or preserve any history. This prevents point-in-time recovery and is inefficient for medium and large datasets with small persistence intervals, but simplifies persisting small, low-value datasets. While `petrify` requires general S3 credentials, `petrify-simple` requires only a pair of singled urls to a single key in S3.
-
-To persist:
-
-    $ export PETRIFY_PUT_URL="https://..."
-    $ petrify-simple --file appendonly.aof --snapshot-interval 60
-
-To recover:
-
-    $ export PETRIFY_GET_URL="https://..."
-    $ curl -o appendonly.aof $PETRIFY_GET_URL
-
-
 ## Installation
 
-    $ gem install json
-    $ gem install aws-s3
-    $ git clone git@github.com:mmcgrana/petrify.git
+    $ git clone git://github.com/mmcgrana/petrify.git
     $ cd petrify
-    $ bin/petrify
-    $ bin/petrify-simple
+    $ bundle install

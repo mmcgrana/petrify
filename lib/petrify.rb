@@ -1,18 +1,18 @@
 require "rubygems"
+require "bundler"
+Bundler.setup
 require "json"
 require "aws/s3"
 
 class Petrify
-  attr_reader :path, :bucket, :prefix, :delta_interval, :snapshot_interval, :max_upload_time, :at_timestamp, :aws_access_key_id, :aws_secret_access_key, :quiet
-  attr_reader :prev_ino, :prev_history, :prev_size
+  attr_reader :path, :bucket, :prefix, :interval, :at_timestamp, :aws_access_key_id, :aws_secret_access_key, :quiet
+  attr_reader :persisted_meta
 
   def initialize(opts)
     @path = opts[:path]
     @bucket = opts[:bucket]
     @prefix = opts[:prefix]
-    @delta_interval = opts[:delta_interval]
-    @snapshot_interval = opts[:snapshot_interval]
-    @max_upload_time = (delta_interval / 2) if delta_interval
+    @interval = opts[:interval]
     @at_timestamp = opts[:at_timestamp]
     @aws_access_key_id = opts[:aws_access_key_id]
     @aws_secret_access_key = opts[:aws_secret_access_key]
@@ -61,42 +61,45 @@ class Petrify
 
   def tick
     log("tick event=open")
+    timestamp = Time.now.to_i
     file = File.open(path, "r")
     stat = file.stat
     ino = stat.ino
     size = stat.size
-    timestamp = Time.now.to_i
-    log("tick event=stat prev_ino=#{prev_ino} ino=#{ino} prev_size=#{prev_size} size=#{size}")
-    if (ino != prev_ino)
+    persisted_ino = (persisted_meta[-1] && (persisted_meta[-1]["ino"]))
+    persisted_size = (persisted_meta[-1] && (persisted_meta[-1]["offset"] + persisted_meta[-1]["limit"]))
+    log("tick event=stat timestamp=#{timestamp} ino=#{ino} persisted_ino=#{persisted_ino} size=#{size} persisted_size=#{size}")
+
+    if (ino != persisted_ino)
       log("tick event=snapshot")
       if put_data(file, timestamp, ino, 0, size)
-        history = [timestamp]
-        meta = {"history" => history}
-        if put_meta(timestamp, meta)
-          @prev_history = history
-          @prev_ino = ino
-          @prev_size = size
+        meta_elem = {"timestamp" => timestamp, "ino" => ino, "offset" => 0, "limit" => size}
+        new_meta = [meta_elem]
+        if put_meta(timestamp, new_meta)
+          @persisted_meta = new_meta
         end
       end
-    elsif (size != prev_size)
+    elsif (size != persisted_size)
       log("tick event=delta")
-      if put_data(file, timestamp, ino, prev_size, size - prev_size)
-        history = prev_history + [timestamp]
-        meta = {"history" => history}
-        if put_meta(timestamp, meta)
-          @prev_history = history
-          @prev_ino = ino
-          @prev_size = size
+      offset = persisted_size
+      limit = size - persisted_size
+      if put_data(file, timestamp, ino, offset, limit)
+        meta_elem = {"timestamp" => timestamp, "ino" => ino, "offset" => offset, "limit" => limit}
+        new_meta = persisted_meta + [meta_elem]
+        if put_meta(timestamp, new_meta)
+          @persisted_meta = new_meta
         end
       end
     else
       log("tick event=unchanged")
     end
+
     file.close
   end
 
   def persist
-    log("persist event=start path=#{path} prefix=#{prefix} delta_interval=#{delta_interval}")
+    log("persist event=start bucket=#{bucket} path=#{path} prefix=#{prefix} interval=#{interval}")
+    @persisted_meta = []
     trap("TERM") do
       log("persist event=trap")
       tick
@@ -107,22 +110,19 @@ class Petrify
       log("persist event=tick")
       tick
       log("persist event=sleep")
-      sleep(delta_interval)
+      sleep(interval)
     end
   end
 
   def get_list
+    start = Time.now
+    log("get_list event=start")
     meta_prefix = "#{prefix}/meta/"
-    AWS::S3::Bucket.objects(bucket, :prefix => meta_prefix).map do |o|
+    list = AWS::S3::Bucket.objects(bucket, :prefix => meta_prefix).map do |o|
       timestamp = o.key.sub(meta_prefix, "").to_i
     end
-  end
-
-  def list
-    get_list.each do |timestamp|
-      time = Time.at(timestamp)
-      puts("#{timestamp}    #{time}")
-    end
+    log("get_list event=finish elapsed=#{Time.now - start}")
+    list
   end
 
   def get_meta(timestamp)
@@ -142,6 +142,33 @@ class Petrify
     log("get_data event=finish elapsed=#{Time.now - start}")
   end
 
+  def list
+    start = Time.now
+    log("list event=start")
+    get_list.each do |timestamp|
+      time = Time.at(timestamp)
+      log("list event=emit timestamp=#{timestamp} time='#{time}'")
+    end
+    log("list event=finish elapsed=#{Time.now - start}")
+  end
+
+  def show
+    start = Time.now
+    log("show event=start")
+    tail_timestamp =
+      if !at_timestamp
+        log("show event=find")
+        get_list.sort.last
+      else
+        at_timestamp
+      end
+    meta = get_meta(tail_timestamp)
+    meta.each do |e|
+      log("show event=emit timestamp=#{e["timestamp"]} ino=#{e["ino"]} offset=#{e["offset"]} limit=#{e["limit"]}")
+    end
+    log("show event=finish elapsed=#{Time.now - start}")
+  end
+
   def recover
     start = Time.now
     log("recover event=start path=#{path} prefix=#{prefix} at_timestamp=#{at_timestamp || "last"}")
@@ -159,9 +186,8 @@ class Petrify
         at_timestamp
       end
     meta = get_meta(tail_timestamp)
-    history = meta["history"]
-    log("recover event=build history_size=#{history.size}")
-    history.each { |timestamp| get_data(file, timestamp) }
+    log("recover event=build chunks=#{meta.size}")
+    meta.each { |e| get_data(file, e["timestamp"]) }
     log("recover event=close")
     file.close
     log("recover event=finish elapsed=#{Time.now - start}")

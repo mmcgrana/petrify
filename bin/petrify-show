@@ -1,0 +1,29 @@
+#!/usr/bin/env ruby
+
+require "optparse"
+$:.unshift(File.join(File.dirname(__FILE__), "..", "lib"))
+require "petrify"
+
+opts = {}
+ARGV.options do |o|
+  o.set_summary_indent("  ")
+  o.banner = "Usage: AWS_ACCESS_KEY_ID=<id> AWS_SECRET_ACCESS_KEY=<key> #{$0} --bucket <name> --prefix <path>"
+  o.on("-b", "--bucket=name", String, "Bucket form which to search") { |b| opts[:bucket] = b }
+  o.on("-p", "--prefix=path", String, "Prefix from which to search") { |p| opts[:prefix] = p }
+  o.on("-a", "--at-timestamp=time", Integer, "Show at timestamp") { |t| opts[:at_timestamp] = t }
+  o.on("-h", "--help", "Show this help message") { abort(o.to_s) }
+  o.separator("")
+  o.parse!
+  opts[:aws_access_key_id] = ENV["AWS_ACCESS_KEY_ID"]
+  opts[:aws_secret_access_key] = ENV["AWS_SECRET_ACCESS_KEY"]
+
+  if !ARGV.empty?
+    abort("Unrecognized arguments: #{ARGV.join(" ")}\n\n#{o}")
+  elsif !(opts[:aws_access_key_id] && opts[:aws_secret_access_key])
+    abort("Missing env vars.\n\n#{o}")
+  elsif !(opts[:bucket] && opts[:prefix])
+    abort("Missing arguments.\n\n#{o}")
+  else
+    Petrify.new(opts).show
+  end
+end

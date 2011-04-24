@@ -1,0 +1,30 @@
+#!/usr/bin/env ruby
+
+require "optparse"
+$:.unshift(File.join(File.dirname(__FILE__), "..", "lib"))
+require "petrify"
+
+opts = {}
+ARGV.options do |o|
+  o.set_summary_indent("  ")
+  o.banner = "Usage: AWS_ACCESS_KEY_ID=<id> AWS_SECRET_ACCESS_KEY=<key> #{$0} --bucket <name> --prefix <path> --file <path> [--delta-interval <secs>] [--snapshot-interval <secs>] [--quiet]"
+  o.on("-b", "--bucket=name", String, "Bucket in which to persist") { |b| opts[:bucket] = b }
+  o.on("-p", "--prefix=path", String, "Prefix in which to persist") { |p| opts[:prefix] = p }
+  o.on("-f", "--file=path", String, "Path to append-only file") { |f| opts[:path] = f }
+  o.on("-i", "--interval=secs", Integer, "Seconds between puts") { |s| opts[:interval] = s }
+  o.on("-h", "--help", "Show this help message") { abort(o.to_s) }
+  o.separator("")
+  o.parse!
+  opts[:aws_access_key_id] = ENV["AWS_ACCESS_KEY_ID"]
+  opts[:aws_secret_access_key] = ENV["AWS_SECRET_ACCESS_KEY"]
+
+  if !ARGV.empty?
+    abort("Unrecognized arguments: #{ARGV.join(" ")}\n\n#{o}")
+  elsif !(opts[:aws_access_key_id] && opts[:aws_secret_access_key])
+    abort("Missing env vars.\n\n#{o}")
+  elsif !(opts[:bucket] && opts[:prefix] && opts[:path] && opts[:interval])
+    abort("Missing arguments.\n\n#{o}")
+  else
+    Petrify.new(opts).persist
+  end
+end
