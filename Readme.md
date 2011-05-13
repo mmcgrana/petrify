@@ -50,7 +50,7 @@ Verify that all data was successfully recovered:
 
 Instead of recovering to the time of the last stored delta, we can recover to a specific point in time. Start by killing the Redis server again:
 
-    $ kill -TERK $REDIS_PID
+    $ kill -TERM $REDIS_PID
     $ rm appendonly.aof
 
 List available recovery timestamps:
